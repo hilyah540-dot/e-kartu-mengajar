@@ -1,0 +1,448 @@
+import React, { useState } from 'react';
+import Swal from 'sweetalert2';
+import * as XLSX from 'xlsx';
+import { toCanvas, toJpeg } from 'html-to-image';
+import jsPDF from 'jspdf';
+import { RecordRow } from '../types';
+import { OFFICIAL_LOGO_URL, formatTanggalIndo } from '../constants';
+import { ArrowLeft, FileDown, FileSpreadsheet, Share2, ChevronDown, BookOpen, Repeat, Image as ImageIcon } from 'lucide-react';
+
+interface CekDataViewProps {
+  rows: RecordRow[];
+  teacherName: string;
+  periodeText: string;
+  onBack: () => void;
+}
+
+export function CekDataView({ rows, teacherName, periodeText, onBack }: CekDataViewProps) {
+  const [displayLimit, setDisplayLimit] = useState(30);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Compute breakdown
+  let jmUlya = 0, jmWus = 0, jmTd = 0;
+  let jpUlya = 0, jpWus = 0, jpTd = 0;
+
+  rows.forEach(r => {
+    jmUlya += Number(r.Mengajar_Ulya) || 0;
+    jmWus += Number(r.Mengajar_Wustho) || 0;
+    jmTd += Number(r.Mengajar_Tadribud) || 0;
+
+    jpUlya += Number(r.Pengganti_Ulya) || 0;
+    jpWus += Number(r.Pengganti_Wustho) || 0;
+    jpTd += Number(r.Pengganti_Tadribud) || 0;
+  });
+
+  const displayedRows = isExporting ? rows : rows.slice(0, displayLimit);
+  const cleanFileName = (teacherName || 'Guru').replace(/\s+/g, '_');
+
+  const generateCardCanvas = async () => {
+    setIsExporting(true);
+    // Allow React to re-render all rows into DOM
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    try {
+      const element = document.getElementById('area-cetak-kartu');
+      if (!element) {
+        throw new Error('Area cetak kartu tidak ditemukan');
+      }
+
+      // Hide the show-more button temporarily
+      const btnContainer = element.querySelector('.show-more-container') as HTMLElement;
+      if (btnContainer) btnContainer.style.display = 'none';
+
+      const canvas = await toCanvas(element, {
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        style: {
+          width: '1000px',
+          minWidth: '1000px',
+          padding: '32px',
+          margin: '0',
+        },
+      });
+
+      if (btnContainer) btnContainer.style.display = '';
+      
+      setIsExporting(false);
+      return canvas;
+    } catch (error) {
+      setIsExporting(false);
+      console.error("Canvas generation error", error);
+      throw error;
+    }
+  };
+
+  const downloadPDF = async () => {
+    Swal.fire({
+      title: 'Menyiapkan PDF...',
+      text: 'Mengonversi kartu ke dokumen PDF...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    try {
+      const canvas = await generateCardCanvas();
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const margin = 8; // 8mm margin
+      const contentWidth = pdfWidth - margin * 2;
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
+      const pageHeight = pdfHeight - margin * 2;
+
+      let heightLeft = contentHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = margin - (contentHeight - heightLeft);
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`Kartu_Mengajar_${cleanFileName}.pdf`);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil Ekspor PDF',
+        text: 'File PDF Kartu Mengajar telah berhasil diunduh.',
+        confirmButtonColor: '#10b981'
+      });
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Ekspor PDF',
+        text: 'Terjadi kendala saat memproses PDF. Silakan coba kembali.',
+        confirmButtonColor: '#10b981'
+      });
+    }
+  };
+
+  const downloadImage = async (type: 'jpg' | 'png' = 'jpg') => {
+    Swal.fire({
+      title: 'Menyiapkan Gambar...',
+      text: 'Mengonversi kartu ke gambar...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    try {
+      const canvas = await generateCardCanvas();
+      const mimeType = type === 'png' ? 'image/png' : 'image/jpeg';
+      const dataUrl = canvas.toDataURL(mimeType, 0.95);
+
+      const link = document.createElement('a');
+      link.download = `Kartu_Mengajar_${cleanFileName}.${type}`;
+      link.href = dataUrl;
+      link.click();
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil Mengunduh Gambar',
+        text: `Gambar kartu mengajar format ${type.toUpperCase()} telah terunduh.`,
+        confirmButtonColor: '#10b981'
+      });
+    } catch (err) {
+      console.error('Error exporting image:', err);
+      Swal.fire('Error', 'Gagal memproses gambar kartu mengajar.', 'error');
+    }
+  };
+
+  const downloadExcel = () => {
+    if (rows.length === 0) {
+      Swal.fire('Data Kosong', 'Tidak ada data untuk diekspor ke Excel.', 'warning');
+      return;
+    }
+
+    const wsData: any[][] = [
+      ['No', 'Tanggal', 'Kehadiran', 'Jam Mengajar', 'Jam Pengganti', 'Kegiatan Tambahan']
+    ];
+
+    rows.forEach((row, idx) => {
+      let mengajar = (row.Mengajar_Ulya ? `Ulya:${row.Mengajar_Ulya} ` : '') + 
+                     (row.Mengajar_Wustho ? `Wustho:${row.Mengajar_Wustho} ` : '') + 
+                     (row.Mengajar_Tadribud ? `TD:${row.Mengajar_Tadribud}` : '');
+
+      let pengganti = (row.Pengganti_Ulya ? `Ulya:${row.Pengganti_Ulya} ` : '') + 
+                      (row.Pengganti_Wustho ? `Wustho:${row.Pengganti_Wustho} ` : '') + 
+                      (row.Pengganti_Tadribud ? `TD:${row.Pengganti_Tadribud}` : '');
+
+      let arrTambahan = [];
+      if (row.Jam_Lembur && row.Jam_Lembur !== 0) arrTambahan.push(`Lembur (${row.Jam_Lembur}j)`);
+      if (row.Jml_Pertemuan_Eskul && row.Jml_Pertemuan_Eskul !== 0) arrTambahan.push(`Eskul ${row.Jenis_Eskul || ''} (${row.Jml_Pertemuan_Eskul}x)`);
+      if (row.Lain_Lain) arrTambahan.push(`Lain-Lain`);
+
+      wsData.push([
+        idx + 1,
+        formatTanggalIndo(row.Tanggal),
+        row.Presensi,
+        mengajar || '-',
+        pengganti || '-',
+        arrTambahan.join(', ') || '-'
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap_Mengajar");
+
+    XLSX.writeFile(wb, `Data_Mengajar_${cleanFileName}.xlsx`);
+  };
+
+  const shareWAOptions = async () => {
+    const { value: format } = await Swal.fire({
+      title: 'Pilih Format Bagikan WA',
+      input: 'select',
+      inputOptions: {
+        'text': 'Teks Ringkasan Saja',
+        'image': 'Gambar Kartu (JPG / PNG)',
+        'pdf': 'File Dokumen PDF'
+      },
+      inputPlaceholder: 'Pilih format...',
+      showCancelButton: true,
+      confirmButtonText: 'Lanjutkan',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#10b981',
+    });
+
+    if (format === 'text') {
+      const total = jmUlya + jmWus + jmTd + jpUlya + jpWus + jpTd;
+      let text = `*LAPORAN REKAP MENGAJAR GURU*\nPonpes Al-Madina Prabumulih\n\n👤 *Nama:* ${teacherName}\n📅 *Periode:* ${periodeText}\n⏱️ *Total Jam Keseluruhan:* ${total} Jam\n\nData ini digenerate secara otomatis melalui E-Administrasi Ponpes Al-Madina.`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    } else if (format === 'image') {
+      const total = jmUlya + jmWus + jmTd + jpUlya + jpWus + jpTd;
+      let text = `*LAPORAN REKAP MENGAJAR GURU*\nPonpes Al-Madina Prabumulih\n\n👤 *Nama:* ${teacherName}\n📅 *Periode:* ${periodeText}\n⏱️ *Total Jam Keseluruhan:* ${total} Jam\n\nBerikut terlampir gambar Kartu Mengajar.`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      await downloadImage('jpg');
+    } else if (format === 'pdf') {
+      downloadPDF();
+    }
+  };
+
+  return (
+    <div className="p-4 md:p-6 max-w-6xl mx-auto pb-12 animate-fade-in">
+      <div className="flex items-center mb-6">
+        <button 
+          onClick={onBack}
+          className="text-emerald-700 hover:text-emerald-900 mr-4 font-bold p-2 bg-white rounded-xl shadow-sm hover:shadow transition-all"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h2 className="text-xl md:text-2xl font-bold text-slate-800 border-b-2 border-emerald-500 pb-1">
+          Tabel Rincian Mengajar
+        </h2>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        <button 
+          onClick={downloadPDF}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 transition-all"
+        >
+          <FileDown className="w-4 h-4" /> Ekspor PDF
+        </button>
+
+        <button 
+          onClick={() => downloadImage('jpg')}
+          className="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 transition-all"
+        >
+          <ImageIcon className="w-4 h-4" /> Gambar JPG
+        </button>
+
+        <button 
+          onClick={downloadExcel}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 transition-all"
+        >
+          <FileSpreadsheet className="w-4 h-4" /> Ekspor Excel
+        </button>
+
+        <button 
+          onClick={shareWAOptions}
+          className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 transition-all"
+        >
+          <Share2 className="w-4 h-4" /> Bagikan ke WA
+        </button>
+      </div>
+
+      {/* Printable Area */}
+      <div id="area-cetak-kartu" className="bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-slate-200 overflow-x-auto relative space-y-6">
+        <div className="flex items-center justify-center border-b-2 border-slate-800 pb-4">
+          <img 
+            src={OFFICIAL_LOGO_URL} 
+            alt="Logo" referrerPolicy="no-referrer" 
+            className="w-16 h-16 mr-4 object-contain"
+            
+            crossOrigin="anonymous"
+          />
+          <div className="text-center">
+            <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 uppercase tracking-tight">KARTU MENGAJAR GURU</h2>
+            <p className="text-xs md:text-sm font-semibold text-slate-600">Pondok Pesantren Al-Madina Prabumulih</p>
+          </div>
+        </div>
+
+        <table className="text-xs md:text-sm font-semibold text-left">
+          <tbody>
+            <tr>
+              <td className="pr-4 py-1 text-slate-600">Nama Guru</td>
+              <td>:</td>
+              <td className="pl-2 font-bold text-emerald-800 uppercase">{teacherName}</td>
+            </tr>
+            <tr>
+              <td className="pr-4 py-1 text-slate-600">Periode</td>
+              <td>:</td>
+              <td className="pl-2 font-semibold text-slate-700">{periodeText}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Total Jam Mengajar & Jam Pengganti Cards */}
+        <div className="summary-grid grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Jam Mengajar (JM) Card */}
+          <div style={{ backgroundColor: '#f0f9ff', borderColor: '#bae6fd' }} className="border p-4 rounded-2xl shadow-xs">
+            <div style={{ borderColor: 'rgba(186, 230, 253, 0.8)' }} className="flex items-center justify-between border-b pb-2 mb-3">
+              <div className="flex items-center gap-2">
+                <div style={{ backgroundColor: '#0284c7', color: '#ffffff' }} className="p-1.5 rounded-lg">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <h3 style={{ color: '#082f49' }} className="font-extrabold text-xs sm:text-sm tracking-tight uppercase">
+                  Jam Mengajar (JM)
+                </h3>
+              </div>
+              <span style={{ backgroundColor: '#0284c7', color: '#ffffff' }} className="text-xs px-2.5 py-0.5 rounded-full font-bold">
+                Total: {jmUlya + jmWus + jmTd} Jam
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#e0f2fe' }} className="border rounded-xl p-2">
+                <span style={{ color: '#0369a1' }} className="text-[11px] font-semibold block uppercase tracking-wider">Ulya</span>
+                <span style={{ color: '#0c4a6e' }} className="text-lg font-extrabold">{jmUlya}</span>
+              </div>
+              <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#e0f2fe' }} className="border rounded-xl p-2">
+                <span style={{ color: '#0369a1' }} className="text-[11px] font-semibold block uppercase tracking-wider">Wustho</span>
+                <span style={{ color: '#0c4a6e' }} className="text-lg font-extrabold">{jmWus}</span>
+              </div>
+              <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#e0f2fe' }} className="border rounded-xl p-2">
+                <span style={{ color: '#0369a1' }} className="text-[11px] font-semibold block uppercase tracking-wider">Tadribud Du'at</span>
+                <span style={{ color: '#0c4a6e' }} className="text-lg font-extrabold">{jmTd}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Jam Pengganti (JP) Card */}
+          <div style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }} className="border p-4 rounded-2xl shadow-xs">
+            <div style={{ borderColor: 'rgba(253, 230, 138, 0.8)' }} className="flex items-center justify-between border-b pb-2 mb-3">
+              <div className="flex items-center gap-2">
+                <div style={{ backgroundColor: '#d97706', color: '#ffffff' }} className="p-1.5 rounded-lg">
+                  <Repeat className="w-4 h-4" />
+                </div>
+                <h3 style={{ color: '#451a03' }} className="font-extrabold text-xs sm:text-sm tracking-tight uppercase">
+                  Jam Pengganti (JP)
+                </h3>
+              </div>
+              <span style={{ backgroundColor: '#d97706', color: '#ffffff' }} className="text-xs px-2.5 py-0.5 rounded-full font-bold">
+                Total: {jpUlya + jpWus + jpTd} Jam
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#fef3c7' }} className="border rounded-xl p-2">
+                <span style={{ color: '#b45309' }} className="text-[11px] font-semibold block uppercase tracking-wider">Ulya</span>
+                <span style={{ color: '#78350f' }} className="text-lg font-extrabold">{jpUlya}</span>
+              </div>
+              <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#fef3c7' }} className="border rounded-xl p-2">
+                <span style={{ color: '#b45309' }} className="text-[11px] font-semibold block uppercase tracking-wider">Wustho</span>
+                <span style={{ color: '#78350f' }} className="text-lg font-extrabold">{jpWus}</span>
+              </div>
+              <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#fef3c7' }} className="border rounded-xl p-2">
+                <span style={{ color: '#b45309' }} className="text-[11px] font-semibold block uppercase tracking-wider">Tadribud Du'at</span>
+                <span style={{ color: '#78350f' }} className="text-lg font-extrabold">{jpTd}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Table Rincian */}
+        <div className="overflow-x-auto pb-4">
+          <table className="table-rincian w-full text-xs text-left border-collapse min-w-[650px]">
+          <thead>
+            <tr className="uppercase text-[11px] tracking-wider text-white">
+              <th style={{ backgroundColor: '#059669' }} className="p-3 border border-emerald-700 text-center w-[6%]">No</th>
+              <th style={{ backgroundColor: '#059669' }} className="p-3 border border-emerald-700 w-[18%]">Tanggal</th>
+              <th style={{ backgroundColor: '#059669' }} className="p-3 border border-emerald-700 w-[25%]">Detail Jam Mengajar</th>
+              <th style={{ backgroundColor: '#059669' }} className="p-3 border border-emerald-700 w-[25%]">Jam Pengganti</th>
+              <th style={{ backgroundColor: '#059669' }} className="p-3 border border-emerald-700 w-[26%]">Kegiatan Tambahan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayedRows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="text-center py-6 italic text-slate-500 border p-3">
+                  Tidak ada data rincian mengajar di rentang tanggal ini.
+                </td>
+              </tr>
+            ) : (
+              displayedRows.map((row, idx) => {
+                let arrM = [];
+                if (row.Mengajar_Ulya) arrM.push(`Ulya: ${row.Mengajar_Ulya}`);
+                if (row.Mengajar_Wustho) arrM.push(`Wustho: ${row.Mengajar_Wustho}`);
+                if (row.Mengajar_Tadribud) arrM.push(`TD: ${row.Mengajar_Tadribud}`);
+
+                let arrP = [];
+                if (row.Pengganti_Ulya) arrP.push(`Ulya: ${row.Pengganti_Ulya}`);
+                if (row.Pengganti_Wustho) arrP.push(`Wustho: ${row.Pengganti_Wustho}`);
+                if (row.Pengganti_Tadribud) arrP.push(`TD: ${row.Pengganti_Tadribud}`);
+
+                let arrT = [];
+                if (row.Jam_Lembur && row.Jam_Lembur !== 0) arrT.push(`Lembur (${row.Jam_Lembur}j)`);
+                if (row.Jml_Pertemuan_Eskul && row.Jml_Pertemuan_Eskul !== 0) arrT.push(`Eskul ${row.Jenis_Eskul || ''} (${row.Jml_Pertemuan_Eskul}x)`);
+                if (row.Lain_Lain) arrT.push(`Lain-Lain`);
+
+                return (
+                  <tr key={idx}>
+                    <td style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }} className="p-2.5 border border-slate-200 text-center font-bold text-slate-600">{idx + 1}</td>
+                    <td style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }} className="p-2.5 border border-slate-200 font-semibold text-slate-800 whitespace-nowrap">
+                      {formatTanggalIndo(row.Tanggal)}
+                    </td>
+                    <td style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }} className="p-2.5 border border-slate-200 font-medium leading-relaxed">
+                      {arrM.length > 0 ? arrM.map((m, i) => <div key={i}>{m}</div>) : '-'}
+                    </td>
+                    <td style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }} className="p-2.5 border border-slate-200 font-medium leading-relaxed text-amber-800">
+                      {arrP.length > 0 ? arrP.map((p, i) => <div key={i}>{p}</div>) : '-'}
+                    </td>
+                    <td style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }} className="p-2.5 border border-slate-200 font-medium leading-relaxed text-indigo-800">
+                      {arrT.length > 0 ? arrT.map((t, i) => <div key={i}>{t}</div>) : '-'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+        </div>
+
+        {displayLimit < rows.length && !isExporting && (
+          <div className="show-more-container text-center pt-2">
+            <button
+              onClick={() => setDisplayLimit(displayLimit + 30)}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-6 py-2.5 rounded-full font-bold text-xs transition-colors shadow-sm inline-flex items-center gap-1.5"
+            >
+              <span>Tampilkan Lebih Banyak ({rows.length - displayLimit} data lagi)</span>
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

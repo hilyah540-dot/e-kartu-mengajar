@@ -1,0 +1,6 @@
+{
+  "name": "E-Administrasi Ponpes Al-Madina",
+  "description": "Aplikasi E-Administrasi & Presensi Guru Pondok Pesantren Al-Madina Prabumulih (PWA Ready untuk Android & iOS)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

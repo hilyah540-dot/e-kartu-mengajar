@@ -1,0 +1,13 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /edit_requests/{requestId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['teacherName', 'tanggal', 'originalData', 'requestedData', 'status', 'createdAt'])
+                    && request.resource.data.status == 'pending';
+      allow update: if true; // Admin can update status to approved/rejected, users might cancel? Allow true for simplicity in prototype
+      allow delete: if true; // Allow delete for cleanup
+    }
+  }
+}

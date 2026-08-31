@@ -1,0 +1,25 @@
+{
+  "short_name": "E-Admin Al-Madina",
+  "name": "E-Administrasi Ponpes Al-Madina Prabumulih",
+  "description": "Sistem Presensi, Kartu Mengajar, dan Administrasi Guru Pondok Pesantren Al-Madina Prabumulih",
+  "icons": [
+    {
+      "src": "/logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#10b981",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/"
+}

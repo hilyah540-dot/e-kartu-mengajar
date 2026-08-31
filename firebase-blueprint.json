@@ -1,0 +1,45 @@
+{
+  "collections": [
+    {
+      "name": "edit_requests",
+      "description": "Stores requests from teachers to edit their teaching record.",
+      "documents": [
+        {
+          "id": "auto-generated",
+          "fields": [
+            {
+              "name": "teacherName",
+              "type": "string",
+              "description": "Name of the teacher making the request."
+            },
+            {
+              "name": "tanggal",
+              "type": "string",
+              "description": "Date of the record being edited."
+            },
+            {
+              "name": "originalData",
+              "type": "map",
+              "description": "The original data row before edits."
+            },
+            {
+              "name": "requestedData",
+              "type": "map",
+              "description": "The new data requested by the teacher."
+            },
+            {
+              "name": "status",
+              "type": "string",
+              "description": "Status of the request: 'pending', 'approved', or 'rejected'."
+            },
+            {
+              "name": "createdAt",
+              "type": "timestamp",
+              "description": "When the request was submitted."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
