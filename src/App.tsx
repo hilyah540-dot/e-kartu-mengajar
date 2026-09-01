@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Swal from 'sweetalert2';
 import { User, ViewMode, RecordRow } from './types';
 import { GAS_URL } from './constants';
@@ -17,6 +17,11 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('splash');
   const [user, setUser] = useState<User | null>(null);
   const [globalData, setGlobalData] = useState<RecordRow[]>([]);
+  const viewModeRef = useRef<ViewMode>('splash');
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
 
   // State passed to CekDataView
   const [cekDataRows, setCekDataRows] = useState<RecordRow[]>([]);
@@ -53,9 +58,13 @@ export default function App() {
     }
 
     const timer = setTimeout(() => {
+      // Setup trap state for exit app confirmation
+      window.history.replaceState({ trap: true }, '', window.location.href);
       if (savedUser) {
-        navigateTo('menu');
+        window.history.pushState({ view: 'menu' }, '', window.location.href);
+        setViewMode('menu');
       } else {
+        window.history.pushState({ view: 'login' }, '', window.location.href);
         setViewMode('login');
       }
     }, 2800);
@@ -123,6 +132,7 @@ export default function App() {
   };
 
   const navigateTo = async (view: ViewMode) => {
+    window.history.pushState({ view }, '', window.location.href);
     setViewMode(view);
     if (view === 'dashboard' || view === 'admin-dashboard' || view === 'form' || view === 'menu') {
       fetchDataIfNeeded();
@@ -149,35 +159,44 @@ export default function App() {
       console.log('Error removing stored user:', e);
     }
     setUser(null);
+    // Clear history and reset trap
+    window.history.replaceState({ trap: true }, '', window.location.href);
+    window.history.pushState({ view: 'login' }, '', window.location.href);
     setViewMode('login');
   };
 
-  // Back button confirmation
+  // Back button navigation & exit confirmation
   useEffect(() => {
-    window.history.pushState(null, '', window.location.href);
-    
     const handlePopState = (e: PopStateEvent) => {
-      Swal.fire({
-        title: 'Keluar Aplikasi?',
-        text: 'Apakah Anda yakin ingin keluar dari aplikasi?',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Ya, Keluar',
-        cancelButtonText: 'Tidak'
-      }).then((result) => {
-        if (result.isConfirmed) {
-           window.close();
-           setTimeout(() => {
-             if (!window.closed) {
-               window.location.href = 'about:blank';
-             }
-           }, 100);
-        } else {
-           window.history.pushState(null, '', window.location.href);
-        }
-      });
+      const state = e.state;
+      if (state && state.trap) {
+        // Trapped at the root, ask to exit
+        Swal.fire({
+          title: 'Keluar Aplikasi?',
+          text: 'Apakah Anda yakin ingin keluar dari aplikasi?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Ya, Keluar',
+          cancelButtonText: 'Tidak'
+        }).then((result) => {
+          if (result.isConfirmed) {
+             window.close();
+             setTimeout(() => {
+               if (!window.closed) {
+                 window.location.href = 'about:blank';
+               }
+             }, 100);
+          } else {
+             // Restore the current view state
+             window.history.pushState({ view: viewModeRef.current }, '', window.location.href);
+          }
+        });
+      } else if (state && state.view) {
+        // Navigate back to previous view
+        setViewMode(state.view);
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -261,7 +280,7 @@ export default function App() {
             user={user}
             globalData={globalData}
             onDataAdded={handleDataAdded}
-            onBack={() => navigateTo('menu')}
+            onBack={() => window.history.back()}
             onSuccessNavigateDashboard={() => { setShowDashboardNotif(true); navigateTo('dashboard'); }}
             isLoading={isLoading}
           />
@@ -273,7 +292,7 @@ export default function App() {
             globalData={globalData}
             onOpenCekData={handleOpenCekData}
             onNavigateForm={() => navigateTo('form')}
-            onBackMenu={() => navigateTo('menu')}
+            onBackMenu={() => window.history.back()}
             showNotif={showDashboardNotif}
             onNotifClosed={() => setShowDashboardNotif(false)}
             onRefresh={() => refreshData(true)}
@@ -287,14 +306,14 @@ export default function App() {
             rows={cekDataRows}
             teacherName={cekDataTeacher}
             periodeText={cekDataPeriode}
-            onBack={() => navigateTo('dashboard')}
+            onBack={() => window.history.back()}
           />
         )}
 
         {viewMode === 'admin-dashboard' && (
           <AdminDashboardView
             globalData={globalData}
-            onBack={() => navigateTo('menu')}
+            onBack={() => window.history.back()}
             onRefresh={() => refreshData(true)}
             isLoading={isLoading}
             isRefreshing={isRefreshing}
@@ -302,13 +321,13 @@ export default function App() {
         )}
         {viewMode === 'pusat-informasi' && (
           <PusatInformasiView
-            onBack={() => navigateTo('menu')}
+            onBack={() => window.history.back()}
           />
         )}
         {(viewMode === 'arsip' || viewMode === 'perangkat') && (
           <DocumentUploadView
             title={viewMode === 'arsip' ? 'Arsip' : 'Perangkat Pembelajaran'}
-            onBack={() => navigateTo('menu')}
+            onBack={() => window.history.back()}
           />
         )}
       </main>
