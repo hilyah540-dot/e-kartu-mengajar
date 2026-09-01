@@ -399,6 +399,15 @@ export function MenuView({ user, onNavigate, onLogout, devAlert, globalData = []
                       Bank Soal (Google Drive)
                     </a>
 
+                    <a 
+                      href="https://drive.google.com/drive/folders/1mYMiHlFLVrRoHGZdSr9Fnt9sX1Fa02wS?usp=sharing" 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="w-full text-left pl-10 pr-4 py-2.5 hover:bg-emerald-100 text-slate-700 border-b border-slate-200/50 text-xs font-semibold block"
+                    >
+                      Bank Soal (guru SW)
+                    </a>
+
                     {/* Perangkat Ajar */}
                     <div>
                       <button 
