@@ -1,7 +1,7 @@
 import React from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { ZoomIn, ZoomOut, X, Download } from 'lucide-react';
+import { ZoomIn, ZoomOut, X, Download, Share2 } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -17,6 +17,22 @@ export interface MediaModalProps {
 }
 
 export function MediaModal({ activeMediaModal, setActiveMediaModal }: MediaModalProps) {
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: activeMediaModal?.title,
+          url: activeMediaModal?.src
+        });
+      } catch (error) {
+        console.log('Error sharing', error);
+      }
+    } else {
+      // Fallback
+      window.open(activeMediaModal?.src, '_blank');
+    }
+  };
+
   if (!activeMediaModal) return null;
 
   return (
